@@ -3,11 +3,13 @@ local activeMenu = {}
 local activeIndex = 1
 
 table.insert(activeMenu, {
-    type = 'submenu',         
-    label = 'Test Main Menu',   
+    type = 'submenu',            
+    label = 'Test Main Menu',    
     tabs = {
         {
             name = 'test',
+            -- Added label here because line 133 lookups require a fallback or a direct match
+            label = 'test_tab', 
             submenu = {
                 {
                     type = 'button',
@@ -23,6 +25,9 @@ table.insert(activeMenu, {
 
 local function setCurrent()
     if dui then
+        -- Enforce a fallback value if activeIndex somehow drops into an uninitialized state
+        if not activeIndex then activeIndex = 1 end
+        
         MachoSendDuiMessage(dui, json.encode({
             action = 'setCurrent',
             current = activeIndex,
@@ -45,7 +50,7 @@ local function isControlJustReleased(control)
 end
 
 nestedMenus = {}
-nestedMenus[1] = { index = 1, menu = activeMenu }
+nestedMenus[1] = { index = 1, menu = activeMenu, label = 'Main Menu' }
 activeIndex = 1
 
 local tabStateMap = {}
@@ -110,27 +115,29 @@ CreateThread(function()
                             timer.lastTime = now
                             timer.delay = math.max(minDelay, timer.delay - speedupStep)
                             local activeData = activeMenu[activeIndex]
-                            if control == 'ArrowLeft' then
-                                if activeData.type == 'scroll' then
-                                    local selected = (activeData.selected or 1) - 1
-                                    if selected <= 0 then selected = #activeData.options end
-                                    activeData.selected = selected
-                                    if activeData.onChange then activeData.onChange(activeData.options[selected]) end
-                                elseif activeData.type == 'slider' then
-                                    local newValue = math.max(activeData.min or 0, math.min(activeData.max or 100, (activeData.value or 0) - 1))
-                                    activeData.value = newValue
-                                    if activeData.onChange then activeData.onChange(newValue) end
-                                end
-                            else
-                                if activeData.type == 'scroll' then
-                                    local selected = (activeData.selected or 1) + 1
-                                    if selected > #activeData.options then selected = 1 end
-                                    activeData.selected = selected
-                                    if activeData.onChange then activeData.onChange(activeData.options[selected]) end
-                                elseif activeData.type == 'slider' then
-                                    local newValue = math.max(activeData.min or 0, math.min(activeData.max or 100, (activeData.value or 0) + 1))
-                                    activeData.value = newValue
-                                    if activeData.onChange then activeData.onChange(newValue) end
+                            if activeData then -- Added structural safety wrapper
+                                if control == 'ArrowLeft' then
+                                    if activeData.type == 'scroll' then
+                                        local selected = (activeData.selected or 1) - 1
+                                        if selected <= 0 then selected = #activeData.options end
+                                        activeData.selected = selected
+                                        if activeData.onChange then activeData.onChange(activeData.options[selected]) end
+                                    elseif activeData.type == 'slider' then
+                                        local newValue = math.max(activeData.min or 0, math.min(activeData.max or 100, (activeData.value or 0) - 1))
+                                        activeData.value = newValue
+                                        if activeData.onChange then activeData.onChange(newValue) end
+                                    end
+                                else
+                                    if activeData.type == 'scroll' then
+                                        local selected = (activeData.selected or 1) + 1
+                                        if selected > #activeData.options then selected = 1 end
+                                        activeData.selected = selected
+                                        if activeData.onChange then activeData.onChange(activeData.options[selected]) end
+                                    elseif activeData.type == 'slider' then
+                                        local newValue = math.max(activeData.min or 0, math.min(activeData.max or 100, (activeData.value or 0) + 1))
+                                        activeData.value = newValue
+                                        if activeData.onChange then activeData.onChange(newValue) end
+                                    end
                                 end
                             end
                             setCurrent()
@@ -145,20 +152,20 @@ CreateThread(function()
                         repeat
                             activeIndex = activeIndex + 1
                             if activeIndex > #activeMenu then activeIndex = 1 end
-                        until activeMenu[activeIndex].type ~= "divider"
+                        until not activeMenu[activeIndex] or activeMenu[activeIndex].type ~= "divider"
                         setCurrent()
 
                     elseif control == 'ArrowUp' then
                         repeat
                             activeIndex = activeIndex - 1
                             if activeIndex < 1 then activeIndex = #activeMenu end
-                        until activeMenu[activeIndex].type ~= "divider"
+                        until not activeMenu[activeIndex] or activeMenu[activeIndex].type ~= "divider"
                         setCurrent()
 
                     elseif control == 'Enter' then
                         local activeData = activeMenu[activeIndex]
 
-                        if activeData.type == 'submenu' then
+                        if activeData and activeData.type == 'submenu' then
                             nestedMenus[#nestedMenus+1] = { index = activeIndex, menu = activeMenu, label = activeData.label }
 
                             if activeData.submenu then
@@ -174,41 +181,43 @@ CreateThread(function()
                                 for _, t in ipairs(currentTabs) do table.insert(names, t.name) end
                                 MachoSendDuiMessage(dui, json.encode({ action = 'setTabs', tabs = names }))
 
-                                -- Fixed: Using a fallback string instead of nil to prevent state crashes
                                 local menuLabel = activeData.label or "Default"
                                 local saved = tabStateMap[menuLabel]
                                 if saved then
                                     currentTabIndex = math.min(saved.tab or 0, #currentTabs - 1)
-                                    activeIndex = math.min(saved.index or 1, #currentTabs[currentTabIndex+1].submenu)
+                                    local currentSub = currentTabs[currentTabIndex+1] and currentTabs[currentTabIndex+1].submenu
+                                    activeIndex = math.min(saved.index or 1, currentSub and #currentSub or 1)
                                 else
                                     currentTabIndex = 0
                                     activeIndex = 1
                                 end
 
                                 MachoSendDuiMessage(dui, json.encode({ action = 'setTabIndex', index = currentTabIndex }))
-                                activeMenu = currentTabs[currentTabIndex + 1].submenu
+                                activeMenu = currentTabs[currentTabIndex + 1].submenu or {}
                                 setCurrent()
 
                             else
                                 isBusy = true
                                 local getSubMenuFunc = activeData.getSubMenu
-                                currentSubMenuRefresher = getSubMenuFunc
-                                isDynamicSubMenu = true
+                                if getSubMenuFunc then
+                                    currentSubMenuRefresher = getSubMenuFunc
+                                    isDynamicSubMenu = true
 
-                                getSubMenuFunc(function(setMenu)
-                                    isBusy = false
-                                    menuStateMap[activeData.label or ''] = activeIndex
+                                    getSubMenuFunc(function(setMenu)
+                                        isBusy = false
+                                        menuStateMap[activeData.label or ''] = activeIndex
 
-                                    local restoreIndex = menuStateMap[activeData.label or ''] or 1
-                                    activeIndex = math.min(restoreIndex, #setMenu)
-                                    if activeIndex < 1 then activeIndex = 1 end
+                                        local restoreIndex = menuStateMap[activeData.label or ''] or 1
+                                        activeIndex = math.min(restoreIndex, #setMenu)
+                                        if activeIndex < 1 then activeIndex = 1 end
 
-                                    activeMenu = setMenu
-                                    setCurrent()
-                                end)
+                                        activeMenu = setMenu
+                                        setCurrent()
+                                    end)
+                                end
                             end
 
-                        else
+                        elseif activeData then
                             if activeData.type == 'checkbox' then
                                 activeData.checked = not activeData.checked
                                 setCurrent()
@@ -216,7 +225,7 @@ CreateThread(function()
 
                             elseif activeData.onConfirm then
                                 if activeData.type == 'scroll' then
-                                    activeData.onConfirm(activeData.options[activeData.selected or 1])
+                                    if activeData.options then activeData.onConfirm(activeData.options[activeData.selected or 1]) end
                                 elseif activeData.type == 'slider' then
                                     activeData.onConfirm(activeData.value)
                                 elseif activeData.type == 'button' then
@@ -230,7 +239,6 @@ CreateThread(function()
 
                         if lastMenu then
                             if currentTabs then
-                                -- Fixed: Added a fallback string pattern to prevent table runtime drops
                                 local lastMenuLabel = lastMenu.label or "Default"
                                 tabStateMap[lastMenuLabel] = {
                                     tab = currentTabIndex,
@@ -242,7 +250,7 @@ CreateThread(function()
                             activeIndex = lastMenu.index or 1
                             activeMenu = lastMenu.menu
 
-                            if #nestedMenus == 1 then
+                            if #nestedMenus <= 1 then
                                 currentTabs = nil
                                 MachoSendDuiMessage(dui, json.encode({ action = 'setTabs', tabs = {"Main Menu"} }))
                             end
