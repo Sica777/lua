@@ -3,7 +3,7 @@ local activeMenu = {}
 local activeIndex = 1
 
 table.insert(activeMenu, {
-    type = 'test',
+    type = 'test_menu',
     type = 'submenu',
     tabs = {
         {
