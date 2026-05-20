@@ -8,7 +8,6 @@ table.insert(activeMenu, {
     tabs = {
         {
             name = 'test',
-            -- Added label here because line 133 lookups require a fallback or a direct match
             label = 'test_tab', 
             submenu = {
                 {
@@ -25,15 +24,17 @@ table.insert(activeMenu, {
 
 local function setCurrent()
     if dui then
-        -- Enforce a fallback value if activeIndex somehow drops into an uninitialized state
-        if not activeIndex then activeIndex = 1 end
+        -- Guarantee activeIndex is a clean number state
+        if type(activeIndex) ~= "number" then activeIndex = 1 end
         
         MachoSendDuiMessage(dui, json.encode({
             action = 'setCurrent',
             current = activeIndex,
             menu = activeMenu
         }))
-        print('setCurrent called with index:', activeIndex)
+        
+        -- Fixed: Concat forcing string conversion so the engine logger doesn't clip parameters
+        print('setCurrent called with index: ' .. tostring(activeIndex))
     end
 end
 
@@ -115,7 +116,7 @@ CreateThread(function()
                             timer.lastTime = now
                             timer.delay = math.max(minDelay, timer.delay - speedupStep)
                             local activeData = activeMenu[activeIndex]
-                            if activeData then -- Added structural safety wrapper
+                            if activeData then 
                                 if control == 'ArrowLeft' then
                                     if activeData.type == 'scroll' then
                                         local selected = (activeData.selected or 1) - 1
