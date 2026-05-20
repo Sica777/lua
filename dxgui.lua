@@ -3,8 +3,8 @@ local activeMenu = {}
 local activeIndex = 1
 
 table.insert(activeMenu, {
-    type = 'test_menu',
-    type = 'submenu',
+    type = 'submenu',         
+    label = 'Test Main Menu',   
     tabs = {
         {
             name = 'test',
@@ -174,7 +174,9 @@ CreateThread(function()
                                 for _, t in ipairs(currentTabs) do table.insert(names, t.name) end
                                 MachoSendDuiMessage(dui, json.encode({ action = 'setTabs', tabs = names }))
 
-                                local saved = tabStateMap[activeData.label]
+                                -- Fixed: Using a fallback string instead of nil to prevent state crashes
+                                local menuLabel = activeData.label or "Default"
+                                local saved = tabStateMap[menuLabel]
                                 if saved then
                                     currentTabIndex = math.min(saved.tab or 0, #currentTabs - 1)
                                     activeIndex = math.min(saved.index or 1, #currentTabs[currentTabIndex+1].submenu)
@@ -228,7 +230,9 @@ CreateThread(function()
 
                         if lastMenu then
                             if currentTabs then
-                                tabStateMap[lastMenu.label or ""] = {
+                                -- Fixed: Added a fallback string pattern to prevent table runtime drops
+                                local lastMenuLabel = lastMenu.label or "Default"
+                                tabStateMap[lastMenuLabel] = {
                                     tab = currentTabIndex,
                                     index = activeIndex
                                 }
@@ -263,7 +267,8 @@ CreateThread(function()
                         MachoSendDuiMessage(dui, json.encode({ action = 'setTabIndex', index = currentTabIndex }))
                         setCurrent()
 
-                        tabStateMap[nestedMenus[#nestedMenus].label or ""] = { tab = currentTabIndex, index = activeIndex }
+                        local currentLabel = (nestedMenus[#nestedMenus] and nestedMenus[#nestedMenus].label) or "Default"
+                        tabStateMap[currentLabel] = { tab = currentTabIndex, index = activeIndex }
 
                     elseif control == 'E' and currentTabs then
                         currentTabIndex = currentTabIndex + 1
@@ -273,7 +278,8 @@ CreateThread(function()
                         MachoSendDuiMessage(dui, json.encode({ action = 'setTabIndex', index = currentTabIndex }))
                         setCurrent()
 
-                        tabStateMap[nestedMenus[#nestedMenus].label or ""] = { tab = currentTabIndex, index = activeIndex }
+                        local currentLabel = (nestedMenus[#nestedMenus] and nestedMenus[#nestedMenus].label) or "Default"
+                        tabStateMap[currentLabel] = { tab = currentTabIndex, index = activeIndex }
                     end
                 end
             end
